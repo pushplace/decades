@@ -2,53 +2,53 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI } from '@google/genai';
 
 const DECADE_BASE: Record<string, string> = {
-  '1920s': '1920s vintage photograph, sepia tone, heavy grain, antique aesthetics',
-  '1950s': '1950s vintage photo, kodachrome color or crisp black and white, classic americana',
-  '1960s': '1960s vintage photo, black and white or muted kodachrome, film grain',
-  '1980s': '1980s portrait, flash photography, vibrant colors, retro aesthetic',
-  '1990s': '1990s film photography, disposable camera aesthetic, slightly washed out, authentic grunge or pop look',
-  '2040s': '2040s futuristic portrait, high-tech, cinematic lighting, ultra-real',
+  '1920s': '1920s vintage photograph, sepia tone, heavy grain, antique studio portrait aesthetic, waist-up couple portrait',
+  '1950s': '1950s vintage photo, kodachrome color or crisp black and white, classic americana, waist-up couple portrait',
+  '1960s': '1960s vintage photo, black and white or warm muted kodachrome, natural film grain, waist-up couple portrait',
+  '1980s': '1980s portrait, direct flash photography, saturated colors, retro aesthetic, waist-up couple portrait',
+  '1990s': '1990s film photography, disposable camera or point-and-shoot aesthetic, slightly washed out colors, waist-up couple portrait',
+  '2040s': 'near-future 2040s portrait, clean cinematic lighting, shot on a high-end digital camera, naturalistic but subtly elevated, waist-up couple portrait',
 };
 
 const PERSONA_MODIFIERS: Record<string, Record<string, string>> = {
   classic: {
-    '1920s': 'dignified couple, formal 1920s evening wear (tuxedos or flapper dresses depending on gender), great gatsby party guests, elegant pose',
-    '1950s': 'classic couple, 1950s fashion (leather jackets, poodle skirts, or tailored suits depending on gender), diner or drive-in setting',
-    '1960s': 'clean cut couple, mad men style suits or elegant mod dresses, timeless fashion',
-    '1980s': 'preppy couple, polo shirts or power suits, studio lighting, clean look',
-    '1990s': 'classic 90s couple, denim on denim, gap commercial aesthetic, simple white tees',
-    '2040s': 'minimalist zen couple, sleek organic fabrics, timeless dignity, soft lighting',
+    '1920s': 'dignified couple, formal 1920s evening wear, art deco backdrop, composed elegant pose',
+    '1950s': 'classic couple, tailored 1950s fashion, clean-cut, diner or suburban backdrop',
+    '1960s': 'polished couple, sharp tailoring or elegant mod fashion, timeless sophistication',
+    '1980s': 'preppy couple, polo shirts or power suits, studio portrait lighting, confident and clean',
+    '1990s': 'classic 90s couple, simple denim and white tees, warm natural light, effortlessly cool',
+    '2040s': 'elegant couple in refined modern fashion, luxe minimalist fabrics, warm soft lighting, quietly wealthy',
   },
   rebel: {
-    '1920s': 'gangster couple, peaky blinders style or rebellious flapper, smoking, moody lighting, tough expressions',
-    '1950s': 'rockabilly couple, leather jackets, tattoos, motorcycles, rebellious attitude',
-    '1960s': 'rocker couple, messy hair, counter-culture protesters, sunglasses, attitude',
-    '1980s': 'punk rock couple, denim jackets with pins, mohawks or wild hair, neon grit',
-    '1990s': 'grunge couple, flannel shirts, ripped jeans, nirvana aesthetic, moody',
-    '2040s': 'cyberpunk street samurai couple, neon tattoos, tactical tech-wear, gritty urban background',
+    '1920s': 'bootlegger couple, dark speakeasy setting, moody low lighting, cigarette smoke, defiant expressions',
+    '1950s': 'rockabilly couple, leather jackets, slicked hair, leaning on a car, rebellious attitude',
+    '1960s': 'counter-culture couple, protest march or rooftop, messy hair, sunglasses, raw attitude',
+    '1980s': 'punk couple, band tees, denim jackets with pins, wild hair, gritty urban setting',
+    '1990s': 'grunge couple, flannel and ripped jeans, messy hair, dimly lit room, moody and intimate',
+    '2040s': 'edgy couple in dark streetwear, shaved or asymmetric hair, tattoos, moody urban night setting, raw and real',
   },
   star: {
-    '1920s': 'silent movie star couple, dramatic lighting, heavy makeup, luxurious fur or velvet',
-    '1950s': 'hollywood golden age couple, glamorous 1950s cinema style, red carpet',
-    '1960s': 'famous beatles-era pop star couple, fashion editorial, paparazzi flash style, cool aura',
-    '1980s': 'pop icon couple, glitter, excessive jewelry, mullets or big perms, bright neon background',
-    '1990s': '90s supermodel or rockstar couple, flash photography, glamorous, iconic',
-    '2040s': 'galactic influencer couple, bioluminescent fashion, floating accessories, perfect lighting',
+    '1920s': 'silent film star couple, dramatic studio lighting, glamorous makeup, luxurious fabrics',
+    '1950s': 'hollywood golden age couple, movie premiere glamour, tailored evening wear, flashbulb lighting',
+    '1960s': 'iconic 60s celebrity couple, fashion editorial style, paparazzi flash, effortless cool',
+    '1980s': 'pop royalty couple, bold fashion, statement jewelry, vivid colors, studio glamour shot',
+    '1990s': '90s it-couple, supermodel energy, flash photography at a party, glamorous and effortless',
+    '2040s': 'power couple at a gala, architectural fashion, perfect skin, editorial lighting, magazine cover quality',
   },
   visionary: {
-    '1920s': 'eccentric inventor couple, round glasses, tweed suits or practical vintage wear, holding blueprints',
-    '1950s': 'atomic age scientist couple, lab coats, retro-futuristic gadgets, optimism',
-    '1960s': 'space age scientist couple, nasa engineer style, horn rimmed glasses, focused expressions',
-    '1980s': 'computer hacker couple, synth aesthetic, digital watches, arcade background',
-    '1990s': 'dot com boom entrepreneurs, casual business, brick cellphones, optimistic tech',
-    '2040s': 'transhumanist couple, holographic eyewear, brain interfaces, clean lab aesthetic',
+    '1920s': 'eccentric inventor couple, round spectacles, workshop setting, curious intensity, period workwear',
+    '1950s': 'atomic age power couple, sharp glasses, optimistic expressions, mid-century modern office or lab',
+    '1960s': 'space-era intellectuals, horn-rimmed glasses, mission control or university setting, focused and brilliant',
+    '1980s': 'early tech couple, oversized glasses, computer lab or arcade glow, digital watch, wry confidence',
+    '1990s': 'dot-com founders, casual business wear, early startup office, brick cellphone, ambitious energy',
+    '2040s': 'tech founders in smart casual, minimal AR glasses, clean modern workspace, understated innovation, natural and grounded',
   },
 };
 
 function getStylePrompt(decade: string, persona: string): string {
   const base = DECADE_BASE[decade] || '';
   const style = PERSONA_MODIFIERS[persona]?.[decade] || '';
-  return `${base}. Style: ${style}. Photorealistic, authentic era-appropriate texture and lighting. Two people/couple portrait.`;
+  return `${base}. Style: ${style}. Photorealistic, authentic era-appropriate texture and lighting. Consistent waist-up framing, both people clearly visible.`;
 }
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
