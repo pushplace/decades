@@ -6,6 +6,7 @@ import { generateDecadePortrait } from './services/geminiService';
 
 const INITIAL_STATE: AppState = {
   originalImage: null,
+  secondImage: null,
   userName: '',
   selectedPersona: 'classic',
   isGenerating: false,
@@ -30,10 +31,11 @@ const PERSONAS: { id: Persona; label: string; emoji: string; desc: string }[] = 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>(INITIAL_STATE);
 
-  const handleImageUpload = async (base64: string) => {
+  const handleGenerate = async () => {
+    if (!state.originalImage) return;
+
     setState(prev => ({
       ...prev,
-      originalImage: base64,
       isGenerating: true,
       generations: {
         [Decade.Twenties]: { ...prev.generations[Decade.Twenties], loading: true },
@@ -50,7 +52,7 @@ const App: React.FC = () => {
     // Pass the selected persona to the service
     eras.forEach(async (era) => {
       try {
-        const url = await generateDecadePortrait(base64, era, state.selectedPersona);
+        const url = await generateDecadePortrait(state.originalImage!, state.secondImage, era, state.selectedPersona);
         setState(prev => ({
           ...prev,
           generations: {
@@ -71,6 +73,14 @@ const App: React.FC = () => {
     });
 
     setState(prev => ({ ...prev, isGenerating: false }));
+  };
+
+  const handleImageUpload = (base64: string) => {
+    setState(prev => ({ ...prev, originalImage: base64 }));
+  };
+
+  const handleSecondImageUpload = (base64: string) => {
+    setState(prev => ({ ...prev, secondImage: base64 }));
   };
 
   const handleReset = () => {
@@ -106,7 +116,7 @@ const App: React.FC = () => {
       </header>
 
       <main className="container mx-auto px-4 py-8 md:py-12">
-        {!state.originalImage ? (
+        {!state.isGenerating && !state.generations[Decade.Twenties].url ? (
           <div className="flex flex-col items-center justify-center space-y-10 animate-fade-in-up">
             <div className="text-center space-y-6 max-w-2xl">
               <h2 className="text-5xl md:text-7xl font-serif font-medium leading-[1.1]">
@@ -173,8 +183,54 @@ const App: React.FC = () => {
 
                {/* Upload */}
                <div>
-                  <label className="block text-sm font-medium text-zinc-400 mb-3 ml-1">3. Upload couple photo for transformation</label>
-                  <ImageUploader onImageSelected={handleImageUpload} />
+                  <label className="block text-sm font-medium text-zinc-400 mb-3 ml-1">3. Upload photos for transformation</label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="relative">
+                      {state.originalImage ? (
+                        <div className="w-full h-48 rounded-2xl overflow-hidden border-2 border-[#719483] relative group">
+                          <img src={state.originalImage} alt="Person 1" className="w-full h-full object-cover" />
+                          <button 
+                            onClick={() => setState(prev => ({ ...prev, originalImage: null }))}
+                            className="absolute top-2 right-2 bg-black/50 p-1.5 rounded-full hover:bg-black/80 transition-colors"
+                          >
+                            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                          </button>
+                        </div>
+                      ) : (
+                        <ImageUploader 
+                          onImageSelected={handleImageUpload} 
+                          label="<span class='font-semibold text-[#719483]'>Upload Photo 1</span><br/>(You or both of you)" 
+                        />
+                      )}
+                    </div>
+                    <div className="relative">
+                      {state.secondImage ? (
+                        <div className="w-full h-48 rounded-2xl overflow-hidden border-2 border-[#719483] relative group">
+                          <img src={state.secondImage} alt="Person 2" className="w-full h-full object-cover" />
+                          <button 
+                            onClick={() => setState(prev => ({ ...prev, secondImage: null }))}
+                            className="absolute top-2 right-2 bg-black/50 p-1.5 rounded-full hover:bg-black/80 transition-colors"
+                          >
+                            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                          </button>
+                        </div>
+                      ) : (
+                        <ImageUploader 
+                          onImageSelected={handleSecondImageUpload} 
+                          label="<span class='font-semibold text-zinc-400'>Upload Photo 2</span><br/>(Optional partner photo)" 
+                        />
+                      )}
+                    </div>
+                  </div>
+                  
+                  <button 
+                    onClick={handleGenerate}
+                    disabled={!state.originalImage || state.isGenerating}
+                    className="w-full mt-6 bg-[#719483] text-white font-medium py-4 px-6 rounded-xl hover:bg-[#5f7d6e] transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-[#719483]/20 text-lg"
+                  >
+                    {state.isGenerating ? 'Generating Timeline...' : 'Generate Magnet Set'}
+                  </button>
+                  
                   <p className="text-center text-xs text-zinc-500 mt-4">
                     <span className="text-[#719483]">★</span> 100% Satisfaction Guarantee on all magnet orders
                   </p>

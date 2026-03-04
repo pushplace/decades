@@ -19,6 +19,7 @@ export interface GeneratedImage {
 
 export interface AppState {
   originalImage: string | null;
+  secondImage: string | null;
   userName: string;
   selectedPersona: Persona;
   generations: Record<Decade, GeneratedImage>;
