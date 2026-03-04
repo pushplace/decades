@@ -6,20 +6,53 @@ interface ImageUploaderProps {
   subLabel?: string;
 }
 
-export const ImageUploader: React.FC<ImageUploaderProps> = ({ 
-  onImageSelected, 
+const MAX_DIMENSION = 1024;
+const JPEG_QUALITY = 0.8;
+
+const resizeImage = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+
+      // Only resize if larger than max
+      if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+        if (width > height) {
+          height = Math.round(height * (MAX_DIMENSION / width));
+          width = MAX_DIMENSION;
+        } else {
+          width = Math.round(width * (MAX_DIMENSION / height));
+          height = MAX_DIMENSION;
+        }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return reject(new Error('Could not get canvas context'));
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', JPEG_QUALITY));
+    };
+    img.onerror = () => reject(new Error('Failed to load image'));
+    img.src = URL.createObjectURL(file);
+  });
+};
+
+export const ImageUploader: React.FC<ImageUploaderProps> = ({
+  onImageSelected,
   label = "Click to upload your selfie",
-  subLabel = "SVG, PNG, JPG or WEBP (MAX. 5MB)"
+  subLabel = "PNG, JPG or WEBP"
 }) => {
-  const handleFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64String = reader.result as string;
-        onImageSelected(base64String);
-      };
-      reader.readAsDataURL(file);
+      try {
+        const resized = await resizeImage(file);
+        onImageSelected(resized);
+      } catch (err) {
+        console.error('Failed to process image:', err);
+      }
     }
   }, [onImageSelected]);
 

@@ -22,7 +22,10 @@ export const generateDecadePortrait = async (
   });
 
   if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: 'Unknown error' }));
+    if (response.status === 413) {
+      throw new Error('Image too large. Please use a smaller photo.');
+    }
+    const err = await response.json().catch(() => ({}));
     throw new Error(err.error || `Server error: ${response.status}`);
   }
 
