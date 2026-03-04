@@ -3,6 +3,10 @@
     "api/generate.ts": {
       "maxDuration": 60,
       "memory": 1024
+    },
+    "api/checkout.ts": {
+      "maxDuration": 30,
+      "memory": 512
     }
   }
 }

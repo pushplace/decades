@@ -10,8 +10,48 @@ interface ResultsGridProps {
 export const ResultsGrid: React.FC<ResultsGridProps> = ({ appState, onReset, onRetry }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isOrdering, setIsOrdering] = useState(false);
+  const [orderError, setOrderError] = useState<string | null>(null);
 
   const eras = [Decade.Twenties, Decade.Fifties, Decade.Sixties, Decade.Eighties, Decade.Nineties, Decade.Future];
+
+  const allImagesReady = eras.every(era => appState.generations[era].url && !appState.generations[era].loading);
+  const anyLoading = eras.some(era => appState.generations[era].loading);
+
+  const handleOrder = async () => {
+    setIsOrdering(true);
+    setOrderError(null);
+
+    try {
+      // Extract base64 data (strip the data:image/png;base64, prefix)
+      const images = eras.map(era => {
+        const url = appState.generations[era].url;
+        return url.replace(/^data:image\/(png|jpeg|jpg|webp);base64,/, '');
+      });
+
+      const response = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          images,
+          userName: appState.userName,
+        }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || `Order failed: ${response.status}`);
+      }
+
+      const { redirectUrl } = await response.json();
+      window.location.href = redirectUrl;
+    } catch (error: any) {
+      console.error('Order error:', error);
+      setOrderError(error.message || 'Something went wrong');
+    } finally {
+      setIsOrdering(false);
+    }
+  };
 
   const handleDownload = async () => {
     const canvas = canvasRef.current;
@@ -171,6 +211,31 @@ export const ResultsGrid: React.FC<ResultsGridProps> = ({ appState, onReset, onR
             </div>
           );
         })}
+      </div>
+
+      {/* Order CTA */}
+      <div className="mt-10 bg-zinc-900/80 border border-zinc-800 rounded-2xl p-8 text-center">
+        <h3 className="text-2xl font-serif mb-2 text-white">
+          Print your timeline as <span className="text-[#719483]">fridge magnets</span>
+        </h3>
+        <p className="text-zinc-400 mb-1">
+          6 high-gloss 3x3" square magnets — thick, durable, and magnetic enough to hold your grocery list hostage.
+        </p>
+        <p className="text-2xl font-semibold text-white mb-6">$28 <span className="text-sm font-normal text-zinc-500">for the set</span></p>
+
+        {orderError && (
+          <p className="text-red-400 text-sm mb-4">{orderError}</p>
+        )}
+
+        <button
+          onClick={handleOrder}
+          disabled={!allImagesReady || isOrdering}
+          className="px-10 py-4 rounded-xl bg-[#719483] text-white text-lg font-medium hover:bg-[#5f7d6e] transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-[#719483]/20"
+        >
+          {isOrdering ? 'Preparing your order...' : anyLoading ? 'Waiting for all images...' : !allImagesReady ? 'Generate all 6 first' : 'Order Magnet Set — $28'}
+        </button>
+
+        <p className="text-xs text-zinc-600 mt-4">Ships in 3-5 business days. Printed by Social Print Studio.</p>
       </div>
 
       <canvas ref={canvasRef} className="hidden" />
