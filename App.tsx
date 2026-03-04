@@ -34,23 +34,18 @@ const App: React.FC = () => {
   const handleGenerate = async () => {
     if (!state.originalImage) return;
 
+    const eras = [Decade.Twenties, Decade.Fifties, Decade.Sixties, Decade.Eighties, Decade.Nineties, Decade.Future];
+
     setState(prev => ({
       ...prev,
       isGenerating: true,
-      generations: {
-        [Decade.Twenties]: { ...prev.generations[Decade.Twenties], loading: true },
-        [Decade.Fifties]: { ...prev.generations[Decade.Fifties], loading: true },
-        [Decade.Sixties]: { ...prev.generations[Decade.Sixties], loading: true },
-        [Decade.Eighties]: { ...prev.generations[Decade.Eighties], loading: true },
-        [Decade.Nineties]: { ...prev.generations[Decade.Nineties], loading: true },
-        [Decade.Future]: { ...prev.generations[Decade.Future], loading: true },
-      }
+      generations: Object.fromEntries(
+        eras.map(era => [era, { ...prev.generations[era], loading: true, error: undefined, url: '' }])
+      ) as AppState['generations'],
     }));
 
-    const eras = [Decade.Twenties, Decade.Fifties, Decade.Sixties, Decade.Eighties, Decade.Nineties, Decade.Future];
-    
-    // Pass the selected persona to the service
-    eras.forEach(async (era) => {
+    // Use Promise.allSettled so all 6 run in parallel and we wait for all to finish
+    const promises = eras.map(async (era) => {
       try {
         const url = await generateDecadePortrait(state.originalImage!, state.secondImage, era, state.selectedPersona);
         setState(prev => ({
@@ -60,18 +55,20 @@ const App: React.FC = () => {
             [era]: { ...prev.generations[era], loading: false, url }
           }
         }));
-      } catch (error) {
-        console.error(error);
+      } catch (error: any) {
+        const message = error?.message || 'Failed to generate';
+        console.error(`Error generating ${era}:`, error);
         setState(prev => ({
           ...prev,
           generations: {
             ...prev.generations,
-            [era]: { ...prev.generations[era], loading: false, error: 'Failed to generate' }
+            [era]: { ...prev.generations[era], loading: false, error: message }
           }
         }));
       }
     });
 
+    await Promise.allSettled(promises);
     setState(prev => ({ ...prev, isGenerating: false }));
   };
 
@@ -101,6 +98,35 @@ const App: React.FC = () => {
     setState(prev => ({ ...prev, selectedPersona: persona }));
   };
 
+  const handleRetry = async (era: Decade) => {
+    if (!state.originalImage) return;
+    setState(prev => ({
+      ...prev,
+      generations: {
+        ...prev.generations,
+        [era]: { ...prev.generations[era], loading: true, error: undefined }
+      }
+    }));
+    try {
+      const url = await generateDecadePortrait(state.originalImage, state.secondImage, era, state.selectedPersona);
+      setState(prev => ({
+        ...prev,
+        generations: {
+          ...prev.generations,
+          [era]: { ...prev.generations[era], loading: false, url }
+        }
+      }));
+    } catch (error: any) {
+      setState(prev => ({
+        ...prev,
+        generations: {
+          ...prev.generations,
+          [era]: { ...prev.generations[era], loading: false, error: error?.message || 'Failed to generate' }
+        }
+      }));
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#0f0f0f] text-white selection:bg-[#719483]/30">
       
@@ -116,7 +142,7 @@ const App: React.FC = () => {
       </header>
 
       <main className="container mx-auto px-4 py-8 md:py-12">
-        {!state.isGenerating && !state.generations[Decade.Twenties].url ? (
+        {!state.isGenerating && !Object.values(state.generations).some(g => g.loading || g.url || g.error) ? (
           <div className="flex flex-col items-center justify-center space-y-10 animate-fade-in-up">
             <div className="text-center space-y-6 max-w-2xl">
               <h2 className="text-5xl md:text-7xl font-serif font-medium leading-[1.1]">
@@ -254,7 +280,7 @@ const App: React.FC = () => {
           </div>
         ) : (
           <div className="animate-fade-in-up">
-            <ResultsGrid appState={state} onReset={handleReset} />
+            <ResultsGrid appState={state} onReset={handleReset} onRetry={handleRetry} />
           </div>
         )}
       </main>

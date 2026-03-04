@@ -4,9 +4,10 @@ import { AppState, Decade } from '../types';
 interface ResultsGridProps {
   appState: AppState;
   onReset: () => void;
+  onRetry?: (era: Decade) => void;
 }
 
-export const ResultsGrid: React.FC<ResultsGridProps> = ({ appState, onReset }) => {
+export const ResultsGrid: React.FC<ResultsGridProps> = ({ appState, onReset, onRetry }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDownloading, setIsDownloading] = useState(false);
 
@@ -138,8 +139,16 @@ export const ResultsGrid: React.FC<ResultsGridProps> = ({ appState, onReset }) =
                     <span className="text-xs uppercase tracking-widest text-zinc-500">Traveling to {era}...</span>
                   </div>
                 ) : gen.error ? (
-                  <div className="absolute inset-0 flex items-center justify-center text-red-400 p-4 text-center text-sm">
-                    {gen.error}
+                  <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center">
+                    <span className="text-red-400 text-sm mb-3">{gen.error}</span>
+                    {onRetry && (
+                      <button
+                        onClick={() => onRetry(era)}
+                        className="px-4 py-1.5 rounded-full border border-zinc-600 text-xs text-zinc-300 hover:border-[#719483] hover:text-[#719483] transition-colors"
+                      >
+                        Retry
+                      </button>
+                    )}
                   </div>
                 ) : gen.url ? (
                   <img 

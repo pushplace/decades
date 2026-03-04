@@ -118,8 +118,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await delay(2000 * (attempt + 1));
         continue;
       }
-      console.error('Gemini API error:', error);
-      return res.status(500).json({ error: 'Failed to generate image' });
+      const msg = error?.message || error?.toString() || 'Unknown error';
+      console.error('Gemini API error:', msg, JSON.stringify(error, null, 2));
+      return res.status(500).json({ error: msg });
     }
   }
 
