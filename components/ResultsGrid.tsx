@@ -22,12 +22,15 @@ export const ResultsGrid: React.FC<ResultsGridProps> = ({ appState, onReset, onR
     if (!ctx) return;
 
     // High res output
-    const width = 2400; 
-    const height = 3600; // Increased height for 3 rows
+    const width = 2400;
     const padding = 100;
     const gap = 60;
+    const labelHeight = 80;
     const imageSize = (width - (padding * 2) - gap) / 2;
-    
+    const titleAreaHeight = 400;
+    const rows = 3;
+    const height = titleAreaHeight + rows * (imageSize + labelHeight) + (rows - 1) * gap + padding;
+
     canvas.width = width;
     canvas.height = height;
 
@@ -59,14 +62,13 @@ export const ResultsGrid: React.FC<ResultsGridProps> = ({ appState, onReset, onR
     };
 
     // Draw images - 2 columns, 3 rows
-    const positions = [
-      { x: padding, y: 400, label: "1920s" },
-      { x: padding + imageSize + gap, y: 400, label: "1950s" },
-      { x: padding, y: 400 + imageSize + gap + 80, label: "1960s" },
-      { x: padding + imageSize + gap, y: 400 + imageSize + gap + 80, label: "1980s" },
-      { x: padding, y: 400 + (imageSize + gap + 80) * 2, label: "1990s" },
-      { x: padding + imageSize + gap, y: 400 + (imageSize + gap + 80) * 2, label: "2040s" }
-    ];
+    const rowHeight = imageSize + labelHeight + gap;
+    const labels = ["1920s", "1950s", "1960s", "1980s", "1990s", "2040s"];
+    const positions = labels.map((label, i) => ({
+      x: padding + (i % 2) * (imageSize + gap),
+      y: titleAreaHeight + Math.floor(i / 2) * rowHeight,
+      label,
+    }));
 
     try {
       for (let i = 0; i < eras.length; i++) {
