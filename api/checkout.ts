@@ -1,64 +1,18 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-const PRINTKIT_BASE = 'https://printkit.dev/api';
-
-interface UploadResponse {
-  uploadUrl: string;
-  publicUrl: string;
-}
-
-async function uploadImage(base64Data: string, index: number): Promise<string> {
-  // Step 1: Get presigned URL from PrintKit
-  const filename = `decades-apart-${Date.now()}-${index}.jpg`;
-  const presignRes = await fetch(`${PRINTKIT_BASE}/upload`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      filename,
-      contentType: 'image/jpeg',
-    }),
-  });
-
-  if (!presignRes.ok) {
-    throw new Error(`Upload presign failed: ${presignRes.status}`);
-  }
-
-  const { uploadUrl, publicUrl }: UploadResponse = await presignRes.json();
-
-  // Step 2: Convert base64 to binary and PUT to S3
-  const binaryData = Buffer.from(base64Data, 'base64');
-  const putRes = await fetch(uploadUrl, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'image/jpeg' },
-    body: binaryData,
-  });
-
-  if (!putRes.ok) {
-    throw new Error(`S3 upload failed: ${putRes.status}`);
-  }
-
-  return publicUrl;
-}
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { images, userName } = req.body;
+  const { photoUrls, userName } = req.body;
 
-  if (!images || !Array.isArray(images) || images.length !== 6) {
-    return res.status(400).json({ error: 'Exactly 6 images required' });
+  if (!photoUrls || !Array.isArray(photoUrls) || photoUrls.length !== 6) {
+    return res.status(400).json({ error: 'Exactly 6 photo URLs required' });
   }
 
   try {
-    // Upload all 6 images to S3 in parallel
-    const photoUrls = await Promise.all(
-      images.map((img: string, i: number) => uploadImage(img, i))
-    );
-
-    // Add to cart via PrintKit
-    const cartRes = await fetch(`${PRINTKIT_BASE}/add-to-cart`, {
+    const cartRes = await fetch('https://printkit.dev/api/add-to-cart', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

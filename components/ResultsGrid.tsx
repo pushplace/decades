@@ -18,22 +18,51 @@ export const ResultsGrid: React.FC<ResultsGridProps> = ({ appState, onReset, onR
   const allImagesReady = eras.every(era => appState.generations[era].url && !appState.generations[era].loading);
   const anyLoading = eras.some(era => appState.generations[era].loading);
 
+  const base64ToBlob = (base64Url: string): Blob => {
+    const parts = base64Url.split(',');
+    const mime = parts[0].match(/:(.*?);/)?.[1] || 'image/png';
+    const binary = atob(parts[1]);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  };
+
   const handleOrder = async () => {
     setIsOrdering(true);
     setOrderError(null);
 
     try {
-      // Extract base64 data (strip the data:image/png;base64, prefix)
-      const images = eras.map(era => {
-        const url = appState.generations[era].url;
-        return url.replace(/^data:image\/(png|jpeg|jpg|webp);base64,/, '');
-      });
+      // Step 1: Upload each image directly from browser to S3 via presigned URLs
+      const photoUrls = await Promise.all(
+        eras.map(async (era, i) => {
+          // Get presigned URL from our API
+          const presignRes = await fetch('/api/presign', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ index: i }),
+          });
+          if (!presignRes.ok) throw new Error('Failed to get upload URL');
+          const { uploadUrl, publicUrl } = await presignRes.json();
 
+          // Upload image blob directly to S3
+          const blob = base64ToBlob(appState.generations[era].url);
+          const putRes = await fetch(uploadUrl, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'image/jpeg' },
+            body: blob,
+          });
+          if (!putRes.ok) throw new Error(`Image upload failed for ${era}`);
+
+          return publicUrl;
+        })
+      );
+
+      // Step 2: Create cart with the public URLs (tiny payload)
       const response = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          images,
+          photoUrls,
           userName: appState.userName,
         }),
       });
