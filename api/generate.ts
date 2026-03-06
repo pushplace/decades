@@ -109,7 +109,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         },
       });
 
-      const responseParts = response?.candidates?.[0]?.content?.parts || [];
+      const candidate = response?.candidates?.[0];
+      const finishReason = candidate?.finishReason;
+
+      if (finishReason === 'SAFETY' || finishReason === 'BLOCKED') {
+        return res.status(400).json({ error: 'This photo couldn\'t be processed. Try a different photo — clear, well-lit couple portraits work best.' });
+      }
+
+      const responseParts = candidate?.content?.parts || [];
       for (const part of responseParts) {
         if (part.text && part.text.includes('COUPLES_ONLY')) {
           return res.status(400).json({ error: 'Decades Apart is designed for couples. Please upload a photo of you and your partner.' });
@@ -126,6 +133,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         continue;
       }
       const msg = error?.message || error?.toString() || 'Unknown error';
+      if (msg.includes('SAFETY') || msg.includes('blocked') || msg.includes('content filter')) {
+        return res.status(400).json({ error: 'This photo couldn\'t be processed. Try a different photo — clear, well-lit couple portraits work best.' });
+      }
       console.error('Gemini API error:', msg, JSON.stringify(error, null, 2));
       return res.status(500).json({ error: msg });
     }
