@@ -4,7 +4,7 @@ import { GoogleGenAI } from '@google/genai';
 const DECADE_BASE: Record<string, string> = {
   '1920s': '1920s vintage photograph, sepia tone, heavy grain, antique studio portrait aesthetic, waist-up couple portrait',
   '1950s': '1950s vintage photo, kodachrome color or crisp black and white, classic americana, waist-up couple portrait',
-  '1960s': '1960s vintage photo, black and white or warm muted kodachrome, natural film grain, waist-up couple portrait',
+  '1960s': '1960s portrait photograph, warm kodachrome film stock, slightly faded colors, soft studio lighting with gentle shadows, close-up couple portrait with shallow depth of field',
   '1980s': '1980s portrait, direct flash photography, saturated colors, retro aesthetic, waist-up couple portrait',
   '1990s': '1990s film photography, disposable camera or point-and-shoot aesthetic, slightly washed out colors, waist-up couple portrait',
   '2040s': 'near-future 2040s portrait, clean cinematic lighting, shot on a high-end digital camera, naturalistic but subtly elevated, waist-up couple portrait',
@@ -14,7 +14,7 @@ const PERSONA_MODIFIERS: Record<string, Record<string, string>> = {
   classic: {
     '1920s': 'dignified couple, formal 1920s evening wear, art deco backdrop, composed elegant pose',
     '1950s': 'classic couple, tailored 1950s fashion, clean-cut, diner or suburban backdrop',
-    '1960s': 'polished couple, sharp tailoring or elegant mod fashion, timeless sophistication',
+    '1960s': 'well-dressed couple in tailored 1960s attire, slim-cut suits or A-line dresses, neat hair, neutral studio backdrop, warm composed expressions',
     '1980s': 'preppy couple, polo shirts or power suits, studio portrait lighting, confident and clean',
     '1990s': 'classic 90s couple, simple denim and white tees, warm natural light, effortlessly cool',
     '2040s': 'elegant couple in refined modern fashion, luxe minimalist fabrics, warm soft lighting, quietly wealthy',
@@ -22,7 +22,7 @@ const PERSONA_MODIFIERS: Record<string, Record<string, string>> = {
   rebel: {
     '1920s': 'bootlegger couple, dark speakeasy setting, moody low lighting, cigarette smoke, defiant expressions',
     '1950s': 'rockabilly couple, leather jackets, slicked hair, leaning on a car, rebellious attitude',
-    '1960s': 'counter-culture couple, protest march or rooftop, messy hair, sunglasses, raw attitude',
+    '1960s': 'bohemian couple, turtlenecks and suede jackets, tousled hair, round sunglasses, candid snapshot feel, brick wall or doorway backdrop, defiant half-smiles',
     '1980s': 'punk couple, band tees, denim jackets with pins, wild hair, gritty urban setting',
     '1990s': 'grunge couple, flannel and ripped jeans, messy hair, dimly lit room, moody and intimate',
     '2040s': 'edgy couple in dark streetwear, shaved or asymmetric hair, tattoos, moody urban night setting, raw and real',
@@ -30,7 +30,7 @@ const PERSONA_MODIFIERS: Record<string, Record<string, string>> = {
   star: {
     '1920s': 'silent film star couple, dramatic studio lighting, glamorous makeup, luxurious fabrics',
     '1950s': 'hollywood golden age couple, movie premiere glamour, tailored evening wear, flashbulb lighting',
-    '1960s': 'iconic 60s celebrity couple, fashion editorial style, paparazzi flash, effortless cool',
+    '1960s': 'glamorous 1960s couple, sleek evening wear, bouffant or slicked hair, warm studio portrait lighting, poised and magnetic, old hollywood warmth',
     '1980s': 'pop royalty couple, bold fashion, statement jewelry, vivid colors, studio glamour shot',
     '1990s': '90s it-couple, supermodel energy, flash photography at a party, glamorous and effortless',
     '2040s': 'power couple at a gala, architectural fashion, perfect skin, editorial lighting, magazine cover quality',
@@ -38,7 +38,7 @@ const PERSONA_MODIFIERS: Record<string, Record<string, string>> = {
   visionary: {
     '1920s': 'eccentric inventor couple, round spectacles, workshop setting, curious intensity, period workwear',
     '1950s': 'atomic age power couple, sharp glasses, optimistic expressions, mid-century modern office or lab',
-    '1960s': 'space-era intellectuals, horn-rimmed glasses, mission control or university setting, focused and brilliant',
+    '1960s': 'intellectual couple, thick-rimmed glasses, tweed and button-downs, books or chalkboard in soft background, warm thoughtful expressions, university portrait feel',
     '1980s': 'early tech couple, oversized glasses, computer lab or arcade glow, digital watch, wry confidence',
     '1990s': 'dot-com founders, casual business wear, early startup office, brick cellphone, ambitious energy',
     '2040s': 'tech founders in smart casual, minimal AR glasses, clean modern workspace, understated innovation, natural and grounded',

@@ -3,25 +3,25 @@ import { GoogleGenAI } from '@google/genai';
 
 const DECADE_BASE: Record<string, string> = {
   '1920s': '1920s vintage photograph, sepia tone, heavy grain, antique studio portrait aesthetic, waist-up couple portrait',
-  '1960s': '1960s vintage photo, black and white or warm muted kodachrome, natural film grain, waist-up couple portrait',
+  '1960s': '1960s portrait photograph, warm kodachrome film stock, slightly faded colors, soft studio lighting with gentle shadows, close-up couple portrait with shallow depth of field',
 };
 
 const PERSONA_MODIFIERS: Record<string, Record<string, string>> = {
   classic: {
     '1920s': 'dignified couple, formal 1920s evening wear, art deco backdrop, composed elegant pose',
-    '1960s': 'polished couple, sharp tailoring or elegant mod fashion, timeless sophistication',
+    '1960s': 'well-dressed couple in tailored 1960s attire, slim-cut suits or A-line dresses, neat hair, neutral studio backdrop, warm composed expressions',
   },
   rebel: {
     '1920s': 'bootlegger couple, dark speakeasy setting, moody low lighting, cigarette smoke, defiant expressions',
-    '1960s': 'counter-culture couple, protest march or rooftop, messy hair, sunglasses, raw attitude',
+    '1960s': 'bohemian couple, turtlenecks and suede jackets, tousled hair, round sunglasses, candid snapshot feel, brick wall or doorway backdrop, defiant half-smiles',
   },
   star: {
     '1920s': 'silent film star couple, dramatic studio lighting, glamorous makeup, luxurious fabrics',
-    '1960s': 'iconic 60s celebrity couple, fashion editorial style, paparazzi flash, effortless cool',
+    '1960s': 'glamorous 1960s couple, sleek evening wear, bouffant or slicked hair, warm studio portrait lighting, poised and magnetic, old hollywood warmth',
   },
   visionary: {
     '1920s': 'eccentric inventor couple, round spectacles, workshop setting, curious intensity, period workwear',
-    '1960s': 'space-era intellectuals, horn-rimmed glasses, mission control or university setting, focused and brilliant',
+    '1960s': 'intellectual couple, thick-rimmed glasses, tweed and button-downs, books or chalkboard in soft background, warm thoughtful expressions, university portrait feel',
   },
 };
 
