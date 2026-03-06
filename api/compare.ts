@@ -74,48 +74,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   parts.push({ text: fullPrompt });
 
   const ai = new GoogleGenAI({ apiKey });
-  const isImagen = model.startsWith('imagen');
   const retries = 3;
 
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
-      if (isImagen) {
-        // Imagen uses generateImages with a text prompt + reference image
-        const response = await ai.models.generateImages({
-          model,
-          prompt: fullPrompt,
-          referenceImages: [{
-            referenceImage: { imageBytes: image },
-            referenceType: 'STYLE_IMAGE',
-          }],
-          config: {
-            numberOfImages: 1,
-            aspectRatio: '1:1',
-          },
-        });
+      const response = await ai.models.generateContent({
+        model,
+        contents: { parts },
+        config: {
+          imageConfig: { aspectRatio: '1:1', imageSize: '1K' },
+        },
+      });
 
-        const imgData = response?.generatedImages?.[0]?.image?.imageBytes;
-        if (imgData) {
-          return res.status(200).json({ imageData: imgData });
+      for (const part of response?.candidates?.[0]?.content?.parts || []) {
+        if (part.inlineData) {
+          return res.status(200).json({ imageData: part.inlineData.data });
         }
-        return res.status(500).json({ error: 'No image data in Imagen response' });
-      } else {
-        // Gemini models use generateContent
-        const response = await ai.models.generateContent({
-          model,
-          contents: { parts },
-          config: {
-            imageConfig: { aspectRatio: '1:1', imageSize: '1K' },
-          },
-        });
-
-        for (const part of response?.candidates?.[0]?.content?.parts || []) {
-          if (part.inlineData) {
-            return res.status(200).json({ imageData: part.inlineData.data });
-          }
-        }
-        return res.status(500).json({ error: 'No image data in response' });
       }
+
+      return res.status(500).json({ error: 'No image data in response' });
     } catch (error: any) {
       if ((error?.status === 503 || error?.message?.includes('503')) && attempt < retries - 1) {
         await delay(2000 * (attempt + 1));
