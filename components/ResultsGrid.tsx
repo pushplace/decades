@@ -319,6 +319,13 @@ export const ResultsGrid: React.FC<ResultsGridProps> = ({ appState, onReset, onR
               </form>
               <p className="text-[10px] text-zinc-600 text-center mt-3">We'll send you occasional updates. Unsubscribe anytime.</p>
             </div>
+            <button
+              onClick={() => { setEmailGated(false); localStorage.setItem(EMAIL_GATE_KEY, 'dev-skip'); }}
+              className="absolute top-3 right-3 text-zinc-700 hover:text-zinc-400 transition-colors"
+              title="shhh"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
           </div>
         )}
       </div>
