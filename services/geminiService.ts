@@ -1,5 +1,24 @@
 import { Decade, Persona } from "../types";
 
+const IS_DEV = import.meta.env.VITE_APP_MODE === 'dev';
+
+// Stable placeholder photos from picsum (seeded so they're consistent)
+const PLACEHOLDER_SEEDS: Record<string, number> = {
+  '1920s': 100, '1950s': 200, '1960s': 300,
+  '1980s': 400, '1990s': 500, '2040s': 600,
+};
+
+async function generatePlaceholder(decade: string): Promise<string> {
+  const seed = PLACEHOLDER_SEEDS[decade] || 999;
+  const res = await fetch(`https://picsum.photos/seed/${seed}/512/512`);
+  const blob = await res.blob();
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.readAsDataURL(blob);
+  });
+}
+
 const cleanBase64 = (dataUrl: string) => {
   return dataUrl.replace(/^data:image\/(png|jpeg|jpg|webp);base64,/, '');
 };
@@ -10,6 +29,7 @@ export const generateDecadePortrait = async (
   decade: Decade,
   persona: Persona,
 ): Promise<string> => {
+  if (IS_DEV) return generatePlaceholder(decade);
   const response = await fetch('/api/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
