@@ -7,7 +7,7 @@ const EMAIL_GATE_KEY = 'decades_email_submitted';
 
 async function subscribeToKlaviyo(email: string): Promise<boolean> {
   try {
-    const res = await fetch('https://a.klaviyo.com/client/subscriptions/', {
+    const res = await fetch(`https://a.klaviyo.com/client/subscriptions/?company_id=${KLAVIYO_PUBLIC_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'revision': '2024-10-15' },
       body: JSON.stringify({
