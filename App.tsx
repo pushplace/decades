@@ -260,6 +260,9 @@ const App: React.FC = () => {
                   <p className="text-center text-xs text-zinc-500 mt-4">
                     <span className="text-[#719483]">★</span> 100% Satisfaction Guarantee on all magnet orders
                   </p>
+                  <p className="text-center text-[10px] text-zinc-600 mt-2">
+                    Designed for couples ages 18+
+                  </p>
                </div>
             </div>
 

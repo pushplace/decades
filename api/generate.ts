@@ -74,7 +74,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     The couple should embody this persona: ${persona}.
     Visual Details: ${stylePrompt}.
 
-    CRITICAL INSTRUCTIONS FOR LIKENESS AND GENDER:
+    CRITICAL INSTRUCTIONS:
+    SUBJECT RESTRICTION: This tool is ONLY for adult couples (romantic partners). If the image contains children, minors, or anyone who appears under 18, you MUST refuse to generate and instead return ONLY the text "COUPLES_ONLY" with no image. Do not attempt to age up minors.
+
+    LIKENESS AND GENDER:
     1. You MUST strictly preserve the exact facial features, bone structure, eye shape, nose shape, and overall likeness of the people in the source image(s).
     2. Do NOT alter their fundamental facial identity. They must be instantly recognizable as the same people.
     3. You MUST strictly preserve the gender of the people in the source image(s). Do NOT change a man into a woman or a woman into a man.
@@ -106,7 +109,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         },
       });
 
-      for (const part of response?.candidates?.[0]?.content?.parts || []) {
+      const responseParts = response?.candidates?.[0]?.content?.parts || [];
+      for (const part of responseParts) {
+        if (part.text && part.text.includes('COUPLES_ONLY')) {
+          return res.status(400).json({ error: 'Decades Apart is designed for couples. Please upload a photo of you and your partner.' });
+        }
         if (part.inlineData) {
           return res.status(200).json({ imageData: part.inlineData.data });
         }
