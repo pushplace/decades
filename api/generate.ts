@@ -99,7 +99,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
       const response = await ai.models.generateContent({
-        model: 'gemini-3-pro-image-preview',
+        model: 'gemini-3.1-flash-image-preview',
         contents: { parts },
         config: {
           imageConfig: { aspectRatio: '1:1', imageSize: '1K' },
