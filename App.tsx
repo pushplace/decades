@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ImageUploader } from './components/ImageUploader';
 import { ResultsGrid } from './components/ResultsGrid';
+import { TokenDisplay } from './components/TokenDisplay';
+import { EmailPopup } from './components/EmailPopup';
 import { AppState, Decade, Persona } from './types';
 import { generateDecadePortrait } from './services/geminiService';
 
@@ -11,6 +13,8 @@ const INITIAL_STATE: AppState = {
   selectedPersona: 'classic',
   isGenerating: false,
   apiKeySelected: true, // Bypass selection, assume env key is present
+  tokenBalance: null,
+  userEmail: null,
   generations: {
     [Decade.Twenties]: { decade: Decade.Twenties, url: '', loading: false },
     [Decade.Fifties]: { decade: Decade.Fifties, url: '', loading: false },
@@ -30,6 +34,66 @@ const PERSONAS: { id: Persona; label: string; emoji: string; desc: string }[] = 
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>(INITIAL_STATE);
+  const [showEmailPopup, setShowEmailPopup] = useState(false);
+
+  const fetchBalance = async (email: string) => {
+    try {
+      const res = await fetch(`/api/tokens/balance?email=${encodeURIComponent(email)}`);
+      if (res.ok) {
+        const { balance } = await res.json();
+        setState(prev => ({ ...prev, tokenBalance: balance, userEmail: email }));
+      }
+    } catch {
+      // silently fail — token system is optional
+    }
+  };
+
+  useEffect(() => {
+    const email = localStorage.getItem('decades_email_submitted');
+    if (email && email !== 'dev-skip') {
+      fetchBalance(email);
+    }
+  }, []);
+
+  const handleEmailKnown = (email: string) => {
+    fetchBalance(email);
+  };
+
+  const handleTokensSpent = () => {
+    if (state.userEmail) fetchBalance(state.userEmail);
+  };
+
+  const proceedToTokenCheckout = async (email: string) => {
+    try {
+      const res = await fetch('/api/tokens/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      if (res.ok) {
+        const { checkoutUrl } = await res.json();
+        window.location.href = checkoutUrl;
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleBuyTokens = async () => {
+    const email = state.userEmail || localStorage.getItem('decades_email_submitted');
+    if (!email || email === 'dev-skip') {
+      // No email yet — show the email popup
+      setShowEmailPopup(true);
+      return;
+    }
+    await proceedToTokenCheckout(email);
+  };
+
+  const handleEmailPopupSubmit = async (email: string) => {
+    setShowEmailPopup(false);
+    handleEmailKnown(email);
+    await proceedToTokenCheckout(email);
+  };
 
   const handleGenerate = async () => {
     if (!state.originalImage) return;
@@ -135,6 +199,7 @@ const App: React.FC = () => {
           Decades Apart <span className="text-[#719483] text-lg">✦</span>
         </h1>
         <div className="flex items-center gap-4">
+          <TokenDisplay balance={state.tokenBalance} onBuyClick={handleBuyTokens} />
           <span className="hidden md:inline-block text-xs uppercase tracking-widest text-[#719483] border border-[#719483]/30 px-3 py-1 rounded-full bg-[#719483]/10">
             Now Printing 6x Set
           </span>
@@ -283,10 +348,24 @@ const App: React.FC = () => {
           </div>
         ) : (
           <div className="animate-fade-in-up">
-            <ResultsGrid appState={state} onReset={handleReset} onRetry={handleRetry} />
+            <ResultsGrid
+            appState={state}
+            onReset={handleReset}
+            onRetry={handleRetry}
+            onTokenSpent={handleTokensSpent}
+            onEmailKnown={handleEmailKnown}
+            onBuyTokens={handleBuyTokens}
+          />
           </div>
         )}
       </main>
+
+      {showEmailPopup && (
+        <EmailPopup
+          onSubmit={handleEmailPopupSubmit}
+          onClose={() => setShowEmailPopup(false)}
+        />
+      )}
 
       <footer className="border-t border-white/5 py-12 text-center text-zinc-600 text-sm">
         <p>&copy; {new Date().getFullYear()} Decades Apart. <span className="text-[#719483]">Custom Magnet Edition</span>.</p>

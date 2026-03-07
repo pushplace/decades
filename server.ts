@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
+import { getBalance, deductToken, creditTokens, isOrderAlreadyCredited } from './db.js';
 
 dotenv.config();
 
@@ -323,6 +324,84 @@ app.post('/api/presign', async (req, res) => {
     console.error('Presign error:', error);
     return res.status(500).json({ error: error.message || 'Failed to get upload URL' });
   }
+});
+
+// ─── Token routes ───────────────────────────────────────────────────
+
+app.get('/api/tokens/balance', (req, res) => {
+  const email = req.query.email as string;
+  if (!email) return res.status(400).json({ error: 'email required' });
+  return res.json({ balance: getBalance(email) });
+});
+
+app.post('/api/tokens/deduct', (req, res) => {
+  const { email, reason, decade } = req.body;
+  if (!email || !reason) return res.status(400).json({ error: 'email and reason required' });
+  const result = deductToken(email, reason, decade || reason);
+  if (!result.success) return res.status(402).json({ error: 'insufficient_tokens' });
+  return res.json({ success: true, newBalance: result.newBalance });
+});
+
+app.post('/api/tokens/checkout', async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'email required' });
+
+  try {
+    const cartRes = await fetch('https://printkit.dev/api/add-to-cart', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sku: 'token-10',
+        source: 'decades-apart',
+        quantity: 1,
+        projectData: {
+          email,
+          metadata: {
+            app: 'decades-apart',
+          },
+        },
+        properties: {
+          'Email': email,
+        },
+      }),
+    });
+
+    if (!cartRes.ok) {
+      const err = await cartRes.json().catch(() => ({}));
+      throw new Error(err.error || `PrintKit cart error: ${cartRes.status}`);
+    }
+
+    const { redirectUrl } = await cartRes.json();
+    return res.json({ checkoutUrl: redirectUrl });
+  } catch (error: any) {
+    console.error('Token checkout error:', error);
+    return res.status(500).json({ error: error.message || 'Token checkout failed' });
+  }
+});
+
+app.post('/api/webhooks/token-purchase', (req, res) => {
+  const secret = process.env.WEBHOOK_SECRET;
+  const authHeader = req.headers['authorization'];
+
+  if (secret && authHeader !== `Bearer ${secret}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const { email, orderId, quantity } = req.body as { email: string; orderId: string; quantity: number };
+  if (!email || !orderId || !quantity) {
+    return res.status(400).json({ error: 'email, orderId and quantity required' });
+  }
+
+  if (isOrderAlreadyCredited(orderId)) {
+    return res.json({ ok: true, skipped: true });
+  }
+
+  const tokensPerUnit = parseInt(process.env.SHOPIFY_TOKENS_PER_UNIT || '10', 10);
+  const delta = quantity * tokensPerUnit;
+  creditTokens(email, delta, 'purchase', orderId);
+
+  console.log(`Credited ${delta} tokens to ${email} for order ${orderId}`);
+  return res.json({ ok: true, credited: delta });
 });
 
 // ─── Start server ──────────────────────────────────────────────────

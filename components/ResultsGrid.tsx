@@ -33,9 +33,12 @@ interface ResultsGridProps {
   appState: AppState;
   onReset: () => void;
   onRetry?: (era: Decade) => void;
+  onTokenSpent?: () => void;
+  onEmailKnown?: (email: string) => void;
+  onBuyTokens?: () => void;
 }
 
-export const ResultsGrid: React.FC<ResultsGridProps> = ({ appState, onReset, onRetry }) => {
+export const ResultsGrid: React.FC<ResultsGridProps> = ({ appState, onReset, onRetry, onTokenSpent, onEmailKnown, onBuyTokens }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const [isOrdering, setIsOrdering] = useState(false);
@@ -58,6 +61,7 @@ export const ResultsGrid: React.FC<ResultsGridProps> = ({ appState, onReset, onR
     if (ok) {
       localStorage.setItem(EMAIL_GATE_KEY, email);
       setEmailGated(false);
+      onEmailKnown?.(email);
     } else {
       setGateError('Something went wrong. Try again.');
     }
@@ -264,12 +268,32 @@ export const ResultsGrid: React.FC<ResultsGridProps> = ({ appState, onReset, onR
                   ) : gen.error ? (
                     <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center">
                       <span className="text-red-400 text-sm mb-3">{gen.error}</span>
-                      {onRetry && (
+                      {onRetry && appState.tokenBalance === 0 && onBuyTokens ? (
                         <button
-                          onClick={() => onRetry(era)}
+                          onClick={onBuyTokens}
+                          className="px-4 py-1.5 rounded-full border border-[#719483]/50 text-xs text-[#719483] hover:bg-[#719483]/10 transition-colors"
+                        >
+                          Buy Tokens to Retry
+                        </button>
+                      ) : onRetry && (
+                        <button
+                          onClick={async () => {
+                            if (appState.userEmail && appState.tokenBalance !== null && appState.tokenBalance >= 1) {
+                              const res = await fetch('/api/tokens/deduct', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ email: appState.userEmail, reason: 'retry', decade: era }),
+                              });
+                              if (!res.ok) return;
+                              onTokenSpent?.();
+                            }
+                            onRetry(era);
+                          }}
                           className="px-4 py-1.5 rounded-full border border-zinc-600 text-xs text-zinc-300 hover:border-[#719483] hover:text-[#719483] transition-colors"
                         >
-                          Retry
+                          {appState.userEmail && appState.tokenBalance !== null && appState.tokenBalance >= 1
+                            ? 'Retry (1 token)'
+                            : 'Retry'}
                         </button>
                       )}
                     </div>

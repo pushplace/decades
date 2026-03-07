@@ -25,6 +25,8 @@ export interface AppState {
   generations: Record<Decade, GeneratedImage>;
   isGenerating: boolean;
   apiKeySelected: boolean;
+  tokenBalance: number | null;
+  userEmail: string | null;
 }
 
 export interface EraConfig {
