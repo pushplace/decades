@@ -64,20 +64,22 @@ export function deductTokens(
   return { success: true, newBalance: balance - count };
 }
 
-export function initDevice(deviceId: string): number {
-  const existing = db.prepare('SELECT email FROM users WHERE email = ?').get(deviceId);
+export function initEmail(email: string): number {
+  const existing = db.prepare('SELECT email FROM users WHERE email = ?').get(email);
   if (!existing) {
-    db.prepare('INSERT OR IGNORE INTO users (email) VALUES (?)').run(deviceId);
+    db.prepare('INSERT OR IGNORE INTO users (email) VALUES (?)').run(email);
     db.prepare(
       'INSERT INTO token_ledger (email, delta, reason, ref) VALUES (?, 12, ?, ?)'
-    ).run(deviceId, 'welcome', 'initial-grant');
+    ).run(email, 'welcome', 'initial-grant');
   }
-  return getBalance(deviceId);
+  return getBalance(email);
 }
 
-export function linkEmailToDevice(deviceId: string, email: string): void {
-  db.prepare('INSERT OR IGNORE INTO users (email) VALUES (?)').run(email);
-  db.prepare('INSERT OR REPLACE INTO device_email_map (device_id, email) VALUES (?, ?)').run(deviceId, email);
+export function getEmailByDeviceId(deviceId: string): string | null {
+  const row = db
+    .prepare('SELECT email FROM device_email_map WHERE device_id = ?')
+    .get(deviceId) as { email: string } | undefined;
+  return row?.email ?? null;
 }
 
 export function getDeviceIdByEmail(email: string): string | null {
@@ -85,6 +87,22 @@ export function getDeviceIdByEmail(email: string): string | null {
     .prepare('SELECT device_id FROM device_email_map WHERE email = ?')
     .get(email) as { device_id: string } | undefined;
   return row?.device_id ?? null;
+}
+
+// Move all tokens from email account → deviceId account (one-time merge)
+export function consolidateToDevice(deviceId: string, email: string): void {
+  const emailBalance = getBalance(email);
+  if (emailBalance <= 0) return;
+  const ref = 'consolidate-' + Date.now();
+  db.prepare('INSERT INTO token_ledger (email, delta, reason, ref) VALUES (?, ?, ?, ?)').run(email, -emailBalance, 'consolidated', ref);
+  db.prepare('INSERT INTO token_ledger (email, delta, reason, ref) VALUES (?, ?, ?, ?)').run(deviceId, emailBalance, 'consolidated', ref);
+}
+
+export function linkEmailToDevice(deviceId: string, email: string): void {
+  db.prepare('INSERT OR IGNORE INTO users (email) VALUES (?)').run(email);
+  db.prepare('INSERT OR REPLACE INTO device_email_map (device_id, email) VALUES (?, ?)').run(deviceId, email);
+  // Merge any tokens already on the email account into the device account
+  consolidateToDevice(deviceId, email);
 }
 
 export function creditTokens(email: string, delta: number, reason: string, ref: string): void {

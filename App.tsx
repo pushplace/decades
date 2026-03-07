@@ -1,17 +1,27 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ImageUploader } from './components/ImageUploader';
 import { ResultsGrid } from './components/ResultsGrid';
 import { TokenDisplay } from './components/TokenDisplay';
-import { EmailPopup } from './components/EmailPopup';
 import { AppState, Decade, Persona } from './types';
 import { generateDecadePortrait } from './services/geminiService';
 
-function getOrCreateDeviceId(): string {
-  const existing = localStorage.getItem('decades_device_id');
-  if (existing) return existing;
-  const id = crypto.randomUUID();
-  localStorage.setItem('decades_device_id', id);
-  return id;
+async function subscribeToKlaviyo(email: string): Promise<void> {
+  try {
+    await fetch('https://a.klaviyo.com/client/subscriptions/?company_id=T6pj88', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'revision': '2024-10-15' },
+      body: JSON.stringify({
+        data: {
+          type: 'subscription',
+          attributes: {
+            profile: { data: { type: 'profile', attributes: { email } } },
+            custom_source: 'Decades Apart',
+          },
+          relationships: { list: { data: { type: 'list', id: 'WwZvuc' } } },
+        },
+      }),
+    });
+  } catch {}
 }
 
 const INITIAL_STATE: AppState = {
@@ -42,62 +52,60 @@ const PERSONAS: { id: Persona; label: string; emoji: string; desc: string }[] = 
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>(INITIAL_STATE);
-  const [showEmailPopup, setShowEmailPopup] = useState(false);
   const [showOutOfTokens, setShowOutOfTokens] = useState(false);
-  const deviceId = useRef<string>(getOrCreateDeviceId());
+  const [emailInput, setEmailInput] = useState('');
+  const [emailSubmitting, setEmailSubmitting] = useState(false);
 
-  const fetchBalance = async (identifier: string) => {
+  const fetchBalance = async (email: string) => {
     try {
-      const param = identifier.includes('@')
-        ? `email=${encodeURIComponent(identifier)}`
-        : `deviceId=${encodeURIComponent(identifier)}`;
-      const res = await fetch(`/api/tokens/balance?${param}`);
+      const res = await fetch(`/api/tokens/balance?email=${encodeURIComponent(email)}`);
       if (res.ok) {
         const { balance } = await res.json();
         setState(prev => ({ ...prev, tokenBalance: balance }));
       }
-    } catch {
-      // silently fail — token system is optional
-    }
+    } catch {}
   };
 
   useEffect(() => {
-    // Init device and grant 12 free tokens if new visitor
-    fetch('/api/tokens/init', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deviceId: deviceId.current }),
-    })
-      .then(r => r.json())
-      .then(({ balance }) => setState(prev => ({ ...prev, tokenBalance: balance })))
-      .catch(() => {});
-
     const email = localStorage.getItem('decades_email_submitted');
-    if (email && email !== 'dev-skip') {
-      setState(prev => ({ ...prev, userEmail: email }));
+    if (email) {
+      // Returning user — load their account (creates with 12 tokens if somehow missing)
+      fetch('/api/tokens/init-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+        .then(r => r.json())
+        .then(({ balance }) => setState(prev => ({ ...prev, userEmail: email, tokenBalance: balance })))
+        .catch(() => {});
     }
   }, []);
 
-  const handleEmailKnown = async (email: string) => {
-    setState(prev => ({ ...prev, userEmail: email }));
-    // Link this email to the device so purchases get credited back to the session
+  const handleEmailFormSubmit = async () => {
+    const email = emailInput.trim();
+    if (!email || !email.includes('@')) return;
+    setEmailSubmitting(true);
     try {
-      await fetch('/api/tokens/link', {
+      const res = await fetch('/api/tokens/init-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deviceId: deviceId.current, email }),
+        body: JSON.stringify({ email }),
       });
+      if (res.ok) {
+        const { balance } = await res.json();
+        setState(prev => ({ ...prev, userEmail: email, tokenBalance: balance }));
+        localStorage.setItem('decades_email_submitted', email);
+        subscribeToKlaviyo(email);
+      }
     } catch {}
-    fetchBalance(deviceId.current);
+    setEmailSubmitting(false);
   };
 
   const handleTokensSpent = () => {
-    fetchBalance(deviceId.current);
+    if (state.userEmail) fetchBalance(state.userEmail);
   };
 
-  const handleOutOfTokens = () => {
-    setShowOutOfTokens(true);
-  };
+  const handleOutOfTokens = () => setShowOutOfTokens(true);
 
   const proceedToTokenCheckout = async (email: string) => {
     try {
@@ -110,25 +118,12 @@ const App: React.FC = () => {
         const { checkoutUrl } = await res.json();
         window.location.href = checkoutUrl;
       }
-    } catch {
-      // ignore
-    }
+    } catch {}
   };
 
   const handleBuyTokens = async () => {
     setShowOutOfTokens(false);
-    const email = state.userEmail || localStorage.getItem('decades_email_submitted');
-    if (!email || email === 'dev-skip') {
-      setShowEmailPopup(true);
-      return;
-    }
-    await proceedToTokenCheckout(email);
-  };
-
-  const handleEmailPopupSubmit = async (email: string) => {
-    setShowEmailPopup(false);
-    await handleEmailKnown(email);
-    await proceedToTokenCheckout(email);
+    if (state.userEmail) await proceedToTokenCheckout(state.userEmail);
   };
 
   const handleRegenerateSelected = async (eras: Decade[]) => {
@@ -160,13 +155,12 @@ const App: React.FC = () => {
     });
 
     await Promise.allSettled(promises);
-    fetchBalance(deviceId.current);
+    if (state.userEmail) fetchBalance(state.userEmail);
   };
 
   const handleGenerate = async () => {
-    if (!state.originalImage) return;
+    if (!state.originalImage || !state.userEmail) return;
 
-    // Gate: need 6 tokens to generate the full set
     if (state.tokenBalance !== null && state.tokenBalance < 6) {
       setShowOutOfTokens(true);
       return;
@@ -175,7 +169,7 @@ const App: React.FC = () => {
     const deductRes = await fetch('/api/tokens/deduct-batch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deviceId: deviceId.current, count: 6, reason: 'generation', ref: 'full-set-' + Date.now() }),
+      body: JSON.stringify({ email: state.userEmail, count: 6, reason: 'generation', ref: 'full-set-' + Date.now() }),
     });
 
     if (!deductRes.ok) {
@@ -232,11 +226,12 @@ const App: React.FC = () => {
   };
 
   const handleReset = () => {
-    // Keep API key and name, reset images
-    setState(prev => ({ 
-      ...INITIAL_STATE, 
+    setState(prev => ({
+      ...INITIAL_STATE,
       apiKeySelected: true,
-      userName: prev.userName
+      userName: prev.userName,
+      userEmail: prev.userEmail,
+      tokenBalance: prev.tokenBalance,
     }));
   };
 
@@ -286,6 +281,11 @@ const App: React.FC = () => {
           Decades Apart <span className="text-[#719483] text-lg">✦</span>
         </h1>
         <div className="flex items-center gap-4">
+          {state.userEmail && (
+            <span className="hidden md:inline-block text-xs text-zinc-400 truncate max-w-[220px]" title={state.userEmail}>
+              {state.userEmail}
+            </span>
+          )}
           <TokenDisplay balance={state.tokenBalance} onBuyClick={handleBuyTokens} />
           <span className="hidden md:inline-block text-xs uppercase tracking-widest text-[#719483] border border-[#719483]/30 px-3 py-1 rounded-full bg-[#719483]/10">
             Now Printing 6x Set
@@ -318,6 +318,12 @@ const App: React.FC = () => {
                    <span className="text-lg">✦</span> 100-Year Ink
                 </div>
               </div>
+
+              {state.userEmail && (
+                <p className="text-sm text-zinc-500 mt-2">
+                  Signed in as <span className="text-zinc-200">{state.userEmail}</span>
+                </p>
+              )}
             </div>
             
             <div className="w-full max-w-2xl bg-zinc-900/50 p-6 md:p-8 rounded-2xl border border-zinc-800 shadow-2xl shadow-black/50">
@@ -359,9 +365,43 @@ const App: React.FC = () => {
                  </div>
                </div>
 
+               {/* Email */}
+               <div className="mb-8">
+                 <label className="block text-sm font-medium text-zinc-400 mb-2 ml-1">3. Your email — get 12 free tokens, save your results</label>
+                 {state.userEmail ? (
+                   <div className="flex items-center justify-between bg-zinc-950 border border-[#719483]/40 rounded-lg px-4 py-3">
+                     <span className="text-white text-sm">{state.userEmail}</span>
+                     <button
+                       onClick={() => { setState(prev => ({ ...prev, userEmail: null, tokenBalance: null })); localStorage.removeItem('decades_email_submitted'); setEmailInput(''); }}
+                       className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors ml-4"
+                     >
+                       Change
+                     </button>
+                   </div>
+                 ) : (
+                   <div className="flex gap-2">
+                     <input
+                       type="email"
+                       placeholder="your@email.com"
+                       value={emailInput}
+                       onChange={e => setEmailInput(e.target.value)}
+                       onKeyDown={e => e.key === 'Enter' && handleEmailFormSubmit()}
+                       className="flex-1 bg-zinc-950 border border-zinc-700 rounded-lg px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-[#719483] transition-all"
+                     />
+                     <button
+                       onClick={handleEmailFormSubmit}
+                       disabled={emailSubmitting || !emailInput.includes('@')}
+                       className="px-5 py-3 bg-[#719483] text-white rounded-lg hover:bg-[#5f7d6e] transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                     >
+                       {emailSubmitting ? '...' : 'Continue'}
+                     </button>
+                   </div>
+                 )}
+               </div>
+
                {/* Upload */}
                <div>
-                  <label className="block text-sm font-medium text-zinc-400 mb-3 ml-1">3. Upload photos for transformation</label>
+                  <label className="block text-sm font-medium text-zinc-400 mb-3 ml-1">4. Upload photos for transformation</label>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="relative">
                       {state.originalImage ? (
@@ -401,7 +441,7 @@ const App: React.FC = () => {
                     </div>
                   </div>
                   
-                  {state.tokenBalance !== null && state.tokenBalance < 6 && (
+                  {state.userEmail && state.tokenBalance !== null && state.tokenBalance < 6 && (
                     <p className="text-center text-sm text-amber-400 mt-4 mb-1">
                       You need 6 tokens to generate — you have {state.tokenBalance}.{' '}
                       <button onClick={handleBuyTokens} className="underline hover:text-amber-300 transition-colors">Buy more</button>
@@ -409,10 +449,10 @@ const App: React.FC = () => {
                   )}
                   <button
                     onClick={handleGenerate}
-                    disabled={!state.originalImage || state.isGenerating || (state.tokenBalance !== null && state.tokenBalance < 6)}
+                    disabled={!state.originalImage || !state.userEmail || state.isGenerating || (state.tokenBalance !== null && state.tokenBalance < 6)}
                     className="w-full mt-3 bg-[#719483] text-white font-medium py-4 px-6 rounded-xl hover:bg-[#5f7d6e] transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-[#719483]/20 text-lg"
                   >
-                    {state.isGenerating ? 'Generating Timeline...' : 'Generate Magnet Set (6 tokens)'}
+                    {state.isGenerating ? 'Generating Timeline...' : !state.userEmail ? 'Enter your email first' : 'Generate Magnet Set (6 tokens)'}
                   </button>
                   
                   <p className="text-center text-xs text-zinc-500 mt-4">
@@ -443,25 +483,16 @@ const App: React.FC = () => {
           <div className="animate-fade-in-up">
             <ResultsGrid
             appState={state}
-            deviceId={deviceId.current}
             onReset={handleReset}
             onRetry={handleRetry}
             onRegenerateSelected={handleRegenerateSelected}
             onTokenSpent={handleTokensSpent}
-            onEmailKnown={handleEmailKnown}
             onBuyTokens={handleBuyTokens}
             onOutOfTokens={handleOutOfTokens}
           />
           </div>
         )}
       </main>
-
-      {showEmailPopup && (
-        <EmailPopup
-          onSubmit={handleEmailPopupSubmit}
-          onClose={() => setShowEmailPopup(false)}
-        />
-      )}
 
       {showOutOfTokens && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">

@@ -1,76 +1,22 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState } from 'react';
 import { AppState, Decade } from '../types';
-
-const KLAVIYO_PUBLIC_KEY = 'T6pj88';
-const KLAVIYO_LIST_ID = 'WwZvuc';
-const EMAIL_GATE_KEY = 'decades_email_submitted';
-
-async function subscribeToKlaviyo(email: string): Promise<boolean> {
-  try {
-    const res = await fetch(`https://a.klaviyo.com/client/subscriptions/?company_id=${KLAVIYO_PUBLIC_KEY}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'revision': '2024-10-15' },
-      body: JSON.stringify({
-        data: {
-          type: 'subscription',
-          attributes: {
-            profile: { data: { type: 'profile', attributes: { email } } },
-            custom_source: 'Decades Apart',
-          },
-          relationships: {
-            list: { data: { type: 'list', id: KLAVIYO_LIST_ID } },
-          },
-        },
-      }),
-    });
-    return res.ok || res.status === 202;
-  } catch {
-    return false;
-  }
-}
 
 interface ResultsGridProps {
   appState: AppState;
-  deviceId: string;
   onReset: () => void;
   onRetry?: (era: Decade) => void;
   onRegenerateSelected?: (eras: Decade[]) => void;
   onTokenSpent?: () => void;
-  onEmailKnown?: (email: string) => void;
   onBuyTokens?: () => void;
   onOutOfTokens?: () => void;
 }
 
-export const ResultsGrid: React.FC<ResultsGridProps> = ({ appState, deviceId, onReset, onRetry, onRegenerateSelected, onTokenSpent, onEmailKnown, onBuyTokens, onOutOfTokens }) => {
+export const ResultsGrid: React.FC<ResultsGridProps> = ({ appState, onReset, onRetry, onRegenerateSelected, onTokenSpent, onBuyTokens, onOutOfTokens }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const [isOrdering, setIsOrdering] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
-  const [emailGated, setEmailGated] = useState(() => !localStorage.getItem(EMAIL_GATE_KEY));
-  const [gateEmail, setGateEmail] = useState('');
-  const [gateSubmitting, setGateSubmitting] = useState(false);
-  const [gateError, setGateError] = useState('');
   const [selectedForRegen, setSelectedForRegen] = useState<Set<Decade>>(new Set());
-
-  const handleEmailSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const email = gateEmail.trim();
-    if (!email || !email.includes('@')) {
-      setGateError('Please enter a valid email');
-      return;
-    }
-    setGateSubmitting(true);
-    setGateError('');
-    const ok = await subscribeToKlaviyo(email);
-    if (ok) {
-      localStorage.setItem(EMAIL_GATE_KEY, email);
-      setEmailGated(false);
-      onEmailKnown?.(email);
-    } else {
-      setGateError('Something went wrong. Try again.');
-    }
-    setGateSubmitting(false);
-  };
 
   const eras = [Decade.Twenties, Decade.Fifties, Decade.Sixties, Decade.Eighties, Decade.Nineties, Decade.Future];
 
@@ -98,7 +44,7 @@ export const ResultsGrid: React.FC<ResultsGridProps> = ({ appState, deviceId, on
     const res = await fetch('/api/tokens/deduct-batch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deviceId, count: erasToRegen.length, reason: 'retry', ref: 'regen-' + Date.now() }),
+      body: JSON.stringify({ email: appState.userEmail, count: erasToRegen.length, reason: 'retry', ref: 'regen-' + Date.now() }),
     });
 
     if (!res.ok) {
@@ -303,7 +249,7 @@ export const ResultsGrid: React.FC<ResultsGridProps> = ({ appState, deviceId, on
       </div>
 
       <div className="relative">
-        <div className={`grid grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8 bg-zinc-900 p-4 md:p-8 rounded-xl border border-zinc-800 shadow-2xl transition-all duration-500 ${emailGated && !anyLoading ? 'blur-lg select-none pointer-events-none' : ''}`}>
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8 bg-zinc-900 p-4 md:p-8 rounded-xl border border-zinc-800 shadow-2xl">
           {eras.map((era) => {
             const gen = appState.generations[era];
             const isSelected = selectedForRegen.has(era);
@@ -333,7 +279,7 @@ export const ResultsGrid: React.FC<ResultsGridProps> = ({ appState, deviceId, on
                             const res = await fetch('/api/tokens/deduct', {
                               method: 'POST',
                               headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ deviceId, reason: 'retry', decade: era }),
+                              body: JSON.stringify({ email: appState.userEmail, reason: 'retry', decade: era }),
                             });
                             if (!res.ok) { onOutOfTokens?.(); return; }
                             onTokenSpent?.();
@@ -380,40 +326,6 @@ export const ResultsGrid: React.FC<ResultsGridProps> = ({ appState, deviceId, on
           })}
         </div>
 
-        {emailGated && !anyLoading && (
-          <div className="absolute inset-0 flex items-center justify-center z-10">
-            <div className="bg-zinc-950/95 border border-zinc-700 rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
-              <h3 className="text-2xl font-serif text-white text-center mb-2">Your portraits are ready</h3>
-              <p className="text-zinc-400 text-sm text-center mb-6">Enter your email to reveal your full timeline.</p>
-              <form onSubmit={handleEmailSubmit} className="space-y-3">
-                <input
-                  type="email"
-                  value={gateEmail}
-                  onChange={e => setGateEmail(e.target.value)}
-                  placeholder="your@email.com"
-                  className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-[#719483] transition-all"
-                  autoFocus
-                />
-                {gateError && <p className="text-red-400 text-xs">{gateError}</p>}
-                <button
-                  type="submit"
-                  disabled={gateSubmitting}
-                  className="w-full bg-[#719483] text-white font-medium py-3 px-6 rounded-lg hover:bg-[#5f7d6e] transition-colors disabled:opacity-50 shadow-lg shadow-[#719483]/20"
-                >
-                  {gateSubmitting ? 'Unlocking...' : 'Reveal My Timeline'}
-                </button>
-              </form>
-              <p className="text-[10px] text-zinc-600 text-center mt-3">We'll send you occasional updates. Unsubscribe anytime.</p>
-            </div>
-            <button
-              onClick={() => { setEmailGated(false); localStorage.setItem(EMAIL_GATE_KEY, 'dev-skip'); }}
-              className="absolute top-3 right-3 text-zinc-700 hover:text-zinc-400 transition-colors"
-              title="shhh"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M6 18L18 6M6 6l12 12"></path></svg>
-            </button>
-          </div>
-        )}
       </div>
 
       {/* Order CTA */}

@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
-import { getBalance, deductToken, deductTokens, creditTokens, isOrderAlreadyCredited, initDevice, linkEmailToDevice, getDeviceIdByEmail } from './db.js';
+import { getBalance, deductToken, deductTokens, creditTokens, isOrderAlreadyCredited, initEmail, getDeviceIdByEmail, consolidateToDevice } from './db.js';
 
 dotenv.config();
 
@@ -328,18 +328,11 @@ app.post('/api/presign', async (req, res) => {
 
 // ─── Token routes ───────────────────────────────────────────────────
 
-app.post('/api/tokens/init', (req, res) => {
-  const { deviceId } = req.body;
-  if (!deviceId) return res.status(400).json({ error: 'deviceId required' });
-  const balance = initDevice(deviceId);
+app.post('/api/tokens/init-email', (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'email required' });
+  const balance = initEmail(email);
   return res.json({ balance });
-});
-
-app.post('/api/tokens/link', (req, res) => {
-  const { deviceId, email } = req.body;
-  if (!deviceId || !email) return res.status(400).json({ error: 'deviceId and email required' });
-  linkEmailToDevice(deviceId, email);
-  return res.json({ ok: true });
 });
 
 app.post('/api/tokens/admin/add', (req, res) => {
@@ -352,33 +345,41 @@ app.post('/api/tokens/admin/add', (req, res) => {
   if (!email || !tokens) return res.status(400).json({ error: 'email and tokens required' });
   const ref = 'admin-' + Date.now();
   creditTokens(email, tokens, reason || 'admin', ref);
-  const deviceId = getDeviceIdByEmail(email);
-  if (deviceId) {
-    creditTokens(deviceId, tokens, reason || 'admin', 'device-' + ref);
-  }
   return res.json({ ok: true, newBalance: getBalance(email) });
 });
 
 app.get('/api/tokens/balance', (req, res) => {
-  const identifier = (req.query.deviceId || req.query.email) as string;
-  if (!identifier) return res.status(400).json({ error: 'deviceId or email required' });
-  return res.json({ balance: getBalance(identifier) });
+  const email = req.query.email as string;
+  if (!email) return res.status(400).json({ error: 'email required' });
+  return res.json({ balance: getBalance(email) });
+});
+
+app.post('/api/tokens/admin/consolidate', (req, res) => {
+  const secret = process.env.WEBHOOK_SECRET;
+  const authHeader = req.headers['authorization'];
+  if (secret && authHeader !== `Bearer ${secret}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  const { email, deviceId } = req.body as { email: string; deviceId?: string };
+  if (!email) return res.status(400).json({ error: 'email required' });
+  const targetDevice = deviceId || getDeviceIdByEmail(email);
+  if (!targetDevice) return res.status(400).json({ error: 'No device linked to this email. Provide deviceId explicitly.' });
+  consolidateToDevice(targetDevice, email);
+  return res.json({ ok: true, newBalance: getBalance(targetDevice) });
 });
 
 app.post('/api/tokens/deduct', (req, res) => {
-  const { email, deviceId, reason, decade } = req.body;
-  const identifier = deviceId || email;
-  if (!identifier || !reason) return res.status(400).json({ error: 'identifier and reason required' });
-  const result = deductToken(identifier, reason, decade || reason);
+  const { email, reason, decade } = req.body;
+  if (!email || !reason) return res.status(400).json({ error: 'email and reason required' });
+  const result = deductToken(email, reason, decade || reason);
   if (!result.success) return res.status(402).json({ error: 'insufficient_tokens', balance: result.newBalance });
   return res.json({ success: true, newBalance: result.newBalance });
 });
 
 app.post('/api/tokens/deduct-batch', (req, res) => {
-  const { email, deviceId, count, reason, ref } = req.body;
-  const identifier = deviceId || email;
-  if (!identifier || !count || !reason) return res.status(400).json({ error: 'identifier, count and reason required' });
-  const result = deductTokens(identifier, count, reason, ref || reason);
+  const { email, count, reason, ref } = req.body;
+  if (!email || !count || !reason) return res.status(400).json({ error: 'email, count and reason required' });
+  const result = deductTokens(email, count, reason, ref || reason);
   if (!result.success) return res.status(402).json({ error: 'insufficient_tokens', balance: result.newBalance });
   return res.json({ success: true, newBalance: result.newBalance });
 });
@@ -441,13 +442,7 @@ app.post('/api/webhooks/token-purchase', (req, res) => {
   const delta = quantity * tokensPerUnit;
   creditTokens(email, delta, 'purchase', orderId);
 
-  // Also credit the linked device so the current session sees the update
-  const deviceId = getDeviceIdByEmail(email);
-  if (deviceId) {
-    creditTokens(deviceId, delta, 'purchase', 'device-' + orderId);
-  }
-
-  console.log(`Credited ${delta} tokens to ${email}${deviceId ? ' (device: ' + deviceId.slice(0, 8) + '...)' : ''} for order ${orderId}`);
+  console.log(`Credited ${delta} tokens to ${email} for order ${orderId}`);
   return res.json({ ok: true, credited: delta });
 });
 
