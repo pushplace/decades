@@ -1,10 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ImageUploader } from './components/ImageUploader';
 import { ResultsGrid } from './components/ResultsGrid';
 import { TokenDisplay } from './components/TokenDisplay';
 import { EmailPopup } from './components/EmailPopup';
 import { AppState, Decade, Persona } from './types';
 import { generateDecadePortrait } from './services/geminiService';
+
+function getOrCreateDeviceId(): string {
+  const existing = localStorage.getItem('decades_device_id');
+  if (existing) return existing;
+  const id = crypto.randomUUID();
+  localStorage.setItem('decades_device_id', id);
+  return id;
+}
 
 const INITIAL_STATE: AppState = {
   originalImage: null,
@@ -35,13 +43,18 @@ const PERSONAS: { id: Persona; label: string; emoji: string; desc: string }[] = 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>(INITIAL_STATE);
   const [showEmailPopup, setShowEmailPopup] = useState(false);
+  const [showOutOfTokens, setShowOutOfTokens] = useState(false);
+  const deviceId = useRef<string>(getOrCreateDeviceId());
 
-  const fetchBalance = async (email: string) => {
+  const fetchBalance = async (identifier: string) => {
     try {
-      const res = await fetch(`/api/tokens/balance?email=${encodeURIComponent(email)}`);
+      const param = identifier.includes('@')
+        ? `email=${encodeURIComponent(identifier)}`
+        : `deviceId=${encodeURIComponent(identifier)}`;
+      const res = await fetch(`/api/tokens/balance?${param}`);
       if (res.ok) {
         const { balance } = await res.json();
-        setState(prev => ({ ...prev, tokenBalance: balance, userEmail: email }));
+        setState(prev => ({ ...prev, tokenBalance: balance }));
       }
     } catch {
       // silently fail — token system is optional
@@ -49,18 +62,41 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
+    // Init device and grant 12 free tokens if new visitor
+    fetch('/api/tokens/init', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId: deviceId.current }),
+    })
+      .then(r => r.json())
+      .then(({ balance }) => setState(prev => ({ ...prev, tokenBalance: balance })))
+      .catch(() => {});
+
     const email = localStorage.getItem('decades_email_submitted');
     if (email && email !== 'dev-skip') {
-      fetchBalance(email);
+      setState(prev => ({ ...prev, userEmail: email }));
     }
   }, []);
 
-  const handleEmailKnown = (email: string) => {
-    fetchBalance(email);
+  const handleEmailKnown = async (email: string) => {
+    setState(prev => ({ ...prev, userEmail: email }));
+    // Link this email to the device so purchases get credited back to the session
+    try {
+      await fetch('/api/tokens/link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceId: deviceId.current, email }),
+      });
+    } catch {}
+    fetchBalance(deviceId.current);
   };
 
   const handleTokensSpent = () => {
-    if (state.userEmail) fetchBalance(state.userEmail);
+    fetchBalance(deviceId.current);
+  };
+
+  const handleOutOfTokens = () => {
+    setShowOutOfTokens(true);
   };
 
   const proceedToTokenCheckout = async (email: string) => {
@@ -80,9 +116,9 @@ const App: React.FC = () => {
   };
 
   const handleBuyTokens = async () => {
+    setShowOutOfTokens(false);
     const email = state.userEmail || localStorage.getItem('decades_email_submitted');
     if (!email || email === 'dev-skip') {
-      // No email yet — show the email popup
       setShowEmailPopup(true);
       return;
     }
@@ -91,12 +127,64 @@ const App: React.FC = () => {
 
   const handleEmailPopupSubmit = async (email: string) => {
     setShowEmailPopup(false);
-    handleEmailKnown(email);
+    await handleEmailKnown(email);
     await proceedToTokenCheckout(email);
+  };
+
+  const handleRegenerateSelected = async (eras: Decade[]) => {
+    if (!state.originalImage || eras.length === 0) return;
+
+    setState(prev => ({
+      ...prev,
+      generations: {
+        ...prev.generations,
+        ...Object.fromEntries(
+          eras.map(era => [era, { ...prev.generations[era], loading: true, error: undefined }])
+        ),
+      },
+    }));
+
+    const promises = eras.map(async (era) => {
+      try {
+        const url = await generateDecadePortrait(state.originalImage!, state.secondImage, era, state.selectedPersona);
+        setState(prev => ({
+          ...prev,
+          generations: { ...prev.generations, [era]: { ...prev.generations[era], loading: false, url } },
+        }));
+      } catch (error: any) {
+        setState(prev => ({
+          ...prev,
+          generations: { ...prev.generations, [era]: { ...prev.generations[era], loading: false, error: error?.message || 'Failed to generate' } },
+        }));
+      }
+    });
+
+    await Promise.allSettled(promises);
+    fetchBalance(deviceId.current);
   };
 
   const handleGenerate = async () => {
     if (!state.originalImage) return;
+
+    // Gate: need 6 tokens to generate the full set
+    if (state.tokenBalance !== null && state.tokenBalance < 6) {
+      setShowOutOfTokens(true);
+      return;
+    }
+
+    const deductRes = await fetch('/api/tokens/deduct-batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId: deviceId.current, count: 6, reason: 'generation', ref: 'full-set-' + Date.now() }),
+    });
+
+    if (!deductRes.ok) {
+      setShowOutOfTokens(true);
+      return;
+    }
+
+    const { newBalance } = await deductRes.json();
+    setState(prev => ({ ...prev, tokenBalance: newBalance }));
 
     const eras = [Decade.Twenties, Decade.Fifties, Decade.Sixties, Decade.Eighties, Decade.Nineties, Decade.Future];
 
@@ -108,7 +196,6 @@ const App: React.FC = () => {
       ) as AppState['generations'],
     }));
 
-    // Use Promise.allSettled so all 6 run in parallel and we wait for all to finish
     const promises = eras.map(async (era) => {
       try {
         const url = await generateDecadePortrait(state.originalImage!, state.secondImage, era, state.selectedPersona);
@@ -314,12 +401,18 @@ const App: React.FC = () => {
                     </div>
                   </div>
                   
-                  <button 
+                  {state.tokenBalance !== null && state.tokenBalance < 6 && (
+                    <p className="text-center text-sm text-amber-400 mt-4 mb-1">
+                      You need 6 tokens to generate — you have {state.tokenBalance}.{' '}
+                      <button onClick={handleBuyTokens} className="underline hover:text-amber-300 transition-colors">Buy more</button>
+                    </p>
+                  )}
+                  <button
                     onClick={handleGenerate}
-                    disabled={!state.originalImage || state.isGenerating}
-                    className="w-full mt-6 bg-[#719483] text-white font-medium py-4 px-6 rounded-xl hover:bg-[#5f7d6e] transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-[#719483]/20 text-lg"
+                    disabled={!state.originalImage || state.isGenerating || (state.tokenBalance !== null && state.tokenBalance < 6)}
+                    className="w-full mt-3 bg-[#719483] text-white font-medium py-4 px-6 rounded-xl hover:bg-[#5f7d6e] transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-[#719483]/20 text-lg"
                   >
-                    {state.isGenerating ? 'Generating Timeline...' : 'Generate Magnet Set'}
+                    {state.isGenerating ? 'Generating Timeline...' : 'Generate Magnet Set (6 tokens)'}
                   </button>
                   
                   <p className="text-center text-xs text-zinc-500 mt-4">
@@ -350,11 +443,14 @@ const App: React.FC = () => {
           <div className="animate-fade-in-up">
             <ResultsGrid
             appState={state}
+            deviceId={deviceId.current}
             onReset={handleReset}
             onRetry={handleRetry}
+            onRegenerateSelected={handleRegenerateSelected}
             onTokenSpent={handleTokensSpent}
             onEmailKnown={handleEmailKnown}
             onBuyTokens={handleBuyTokens}
+            onOutOfTokens={handleOutOfTokens}
           />
           </div>
         )}
@@ -365,6 +461,30 @@ const App: React.FC = () => {
           onSubmit={handleEmailPopupSubmit}
           onClose={() => setShowEmailPopup(false)}
         />
+      )}
+
+      {showOutOfTokens && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-zinc-950 border border-zinc-700 rounded-2xl p-8 max-w-sm w-full shadow-2xl text-center">
+            <div className="text-5xl mb-4">⏳</div>
+            <h3 className="text-2xl font-serif text-white mb-2">Out of tokens</h3>
+            <p className="text-zinc-400 text-sm mb-6 leading-relaxed">
+              You've used all your free regenerations. Buy more tokens to keep perfecting your timeline.
+            </p>
+            <button
+              onClick={handleBuyTokens}
+              className="w-full bg-[#719483] text-white font-medium py-3 px-6 rounded-lg hover:bg-[#5f7d6e] transition-colors shadow-lg shadow-[#719483]/20 mb-3"
+            >
+              Buy More Tokens
+            </button>
+            <button
+              onClick={() => setShowOutOfTokens(false)}
+              className="text-zinc-500 text-sm hover:text-zinc-300 transition-colors"
+            >
+              Maybe Later
+            </button>
+          </div>
+        </div>
       )}
 
       <footer className="border-t border-white/5 py-12 text-center text-zinc-600 text-sm">

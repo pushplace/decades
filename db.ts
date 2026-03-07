@@ -23,6 +23,12 @@ db.exec(`
     ref TEXT,
     created_at INTEGER DEFAULT (unixepoch())
   );
+
+  CREATE TABLE IF NOT EXISTS device_email_map (
+    device_id TEXT PRIMARY KEY,
+    email TEXT NOT NULL,
+    created_at INTEGER DEFAULT (unixepoch())
+  );
 `);
 
 export function getBalance(email: string): number {
@@ -33,18 +39,52 @@ export function getBalance(email: string): number {
 }
 
 export function deductToken(
-  email: string,
+  identifier: string,
   reason: string,
   ref: string
 ): { success: boolean; newBalance: number } {
-  const balance = getBalance(email);
-  if (balance < 1) return { success: false, newBalance: balance };
-  db.prepare('INSERT INTO token_ledger (email, delta, reason, ref) VALUES (?, -1, ?, ?)').run(
-    email,
-    reason,
-    ref
-  );
-  return { success: true, newBalance: balance - 1 };
+  return deductTokens(identifier, 1, reason, ref);
+}
+
+export function deductTokens(
+  identifier: string,
+  count: number,
+  reason: string,
+  ref: string
+): { success: boolean; newBalance: number } {
+  const balance = getBalance(identifier);
+  if (balance < count) return { success: false, newBalance: balance };
+  const stmt = db.prepare('INSERT INTO token_ledger (email, delta, reason, ref) VALUES (?, -1, ?, ?)');
+  const deductMany = db.transaction(() => {
+    for (let i = 0; i < count; i++) {
+      stmt.run(identifier, reason, `${ref}-${i}`);
+    }
+  });
+  deductMany();
+  return { success: true, newBalance: balance - count };
+}
+
+export function initDevice(deviceId: string): number {
+  const existing = db.prepare('SELECT email FROM users WHERE email = ?').get(deviceId);
+  if (!existing) {
+    db.prepare('INSERT OR IGNORE INTO users (email) VALUES (?)').run(deviceId);
+    db.prepare(
+      'INSERT INTO token_ledger (email, delta, reason, ref) VALUES (?, 12, ?, ?)'
+    ).run(deviceId, 'welcome', 'initial-grant');
+  }
+  return getBalance(deviceId);
+}
+
+export function linkEmailToDevice(deviceId: string, email: string): void {
+  db.prepare('INSERT OR IGNORE INTO users (email) VALUES (?)').run(email);
+  db.prepare('INSERT OR REPLACE INTO device_email_map (device_id, email) VALUES (?, ?)').run(deviceId, email);
+}
+
+export function getDeviceIdByEmail(email: string): string | null {
+  const row = db
+    .prepare('SELECT device_id FROM device_email_map WHERE email = ?')
+    .get(email) as { device_id: string } | undefined;
+  return row?.device_id ?? null;
 }
 
 export function creditTokens(email: string, delta: number, reason: string, ref: string): void {

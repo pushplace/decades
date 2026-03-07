@@ -31,14 +31,17 @@ async function subscribeToKlaviyo(email: string): Promise<boolean> {
 
 interface ResultsGridProps {
   appState: AppState;
+  deviceId: string;
   onReset: () => void;
   onRetry?: (era: Decade) => void;
+  onRegenerateSelected?: (eras: Decade[]) => void;
   onTokenSpent?: () => void;
   onEmailKnown?: (email: string) => void;
   onBuyTokens?: () => void;
+  onOutOfTokens?: () => void;
 }
 
-export const ResultsGrid: React.FC<ResultsGridProps> = ({ appState, onReset, onRetry, onTokenSpent, onEmailKnown, onBuyTokens }) => {
+export const ResultsGrid: React.FC<ResultsGridProps> = ({ appState, deviceId, onReset, onRetry, onRegenerateSelected, onTokenSpent, onEmailKnown, onBuyTokens, onOutOfTokens }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const [isOrdering, setIsOrdering] = useState(false);
@@ -47,6 +50,7 @@ export const ResultsGrid: React.FC<ResultsGridProps> = ({ appState, onReset, onR
   const [gateEmail, setGateEmail] = useState('');
   const [gateSubmitting, setGateSubmitting] = useState(false);
   const [gateError, setGateError] = useState('');
+  const [selectedForRegen, setSelectedForRegen] = useState<Set<Decade>>(new Set());
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,6 +75,41 @@ export const ResultsGrid: React.FC<ResultsGridProps> = ({ appState, onReset, onR
   const eras = [Decade.Twenties, Decade.Fifties, Decade.Sixties, Decade.Eighties, Decade.Nineties, Decade.Future];
 
   const allImagesReady = eras.every(era => appState.generations[era].url && !appState.generations[era].loading);
+
+  const toggleSelectEra = (era: Decade) => {
+    setSelectedForRegen(prev => {
+      const next = new Set(prev);
+      if (next.has(era)) next.delete(era); else next.add(era);
+      return next;
+    });
+  };
+
+  const handleRegenerateSelected = async () => {
+    const erasToRegen = Array.from(selectedForRegen);
+    if (erasToRegen.length === 0) return;
+
+    // Block if not enough tokens
+    if (appState.tokenBalance !== null && appState.tokenBalance < erasToRegen.length) {
+      onOutOfTokens?.();
+      return;
+    }
+
+    // Deduct all at once atomically
+    const res = await fetch('/api/tokens/deduct-batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId, count: erasToRegen.length, reason: 'retry', ref: 'regen-' + Date.now() }),
+    });
+
+    if (!res.ok) {
+      onOutOfTokens?.();
+      return;
+    }
+
+    onTokenSpent?.();
+    setSelectedForRegen(new Set());
+    onRegenerateSelected?.(erasToRegen);
+  };
   const anyLoading = eras.some(era => appState.generations[era].loading);
 
   const base64ToBlob = (base64Url: string): Blob => {
@@ -236,14 +275,24 @@ export const ResultsGrid: React.FC<ResultsGridProps> = ({ appState, onReset, onR
           </h2>
           <p className="text-zinc-400">Your journey through time, styled to match your vibe.</p>
         </div>
-        <div className="flex gap-3">
-          <button 
+        <div className="flex gap-3 flex-wrap justify-end">
+          {selectedForRegen.size > 0 && (
+            <button
+              onClick={handleRegenerateSelected}
+              disabled={appState.tokenBalance !== null && appState.tokenBalance < selectedForRegen.size}
+              title={appState.tokenBalance !== null && appState.tokenBalance < selectedForRegen.size ? `Need ${selectedForRegen.size} tokens, you have ${appState.tokenBalance}` : undefined}
+              className="px-6 py-2 rounded-full border border-[#719483] text-[#719483] text-sm font-medium hover:bg-[#719483]/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Re-generate {selectedForRegen.size} Selected ({selectedForRegen.size} token{selectedForRegen.size > 1 ? 's' : ''})
+            </button>
+          )}
+          <button
             onClick={onReset}
             className="px-6 py-2 rounded-full border border-zinc-700 text-sm font-medium hover:bg-zinc-800 hover:text-[#719483] hover:border-[#719483] transition-colors"
           >
             Start Over
           </button>
-          <button 
+          <button
             onClick={handleDownload}
             disabled={isDownloading}
             className="px-6 py-2 rounded-full bg-[#719483] text-white text-sm font-medium hover:bg-[#5f7d6e] transition-colors disabled:opacity-50 shadow-lg shadow-[#719483]/20"
@@ -257,9 +306,12 @@ export const ResultsGrid: React.FC<ResultsGridProps> = ({ appState, onReset, onR
         <div className={`grid grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8 bg-zinc-900 p-4 md:p-8 rounded-xl border border-zinc-800 shadow-2xl transition-all duration-500 ${emailGated && !anyLoading ? 'blur-lg select-none pointer-events-none' : ''}`}>
           {eras.map((era) => {
             const gen = appState.generations[era];
+            const isSelected = selectedForRegen.has(era);
             return (
               <div key={era} className="flex flex-col gap-3 group">
-                <div className="aspect-square relative overflow-hidden rounded-lg bg-zinc-950 border border-zinc-800 ring-1 ring-white/5 group-hover:ring-[#719483]/50 transition-all duration-500">
+                <div
+                  className={`aspect-square relative overflow-hidden rounded-lg bg-zinc-950 border transition-all duration-300 ring-1 ring-white/5 ${isSelected ? 'border-[#719483] ring-[#719483]/50 shadow-[0_0_12px_-2px_rgba(113,148,131,0.4)]' : 'border-zinc-800 group-hover:ring-[#719483]/30'}`}
+                >
                   {gen.loading ? (
                     <div className="absolute inset-0 flex flex-col items-center justify-center">
                       <div className="w-8 h-8 border-2 border-[#719483]/20 border-t-[#719483] rounded-full animate-spin mb-4"></div>
@@ -278,31 +330,41 @@ export const ResultsGrid: React.FC<ResultsGridProps> = ({ appState, onReset, onR
                       ) : onRetry && (
                         <button
                           onClick={async () => {
-                            if (appState.userEmail && appState.tokenBalance !== null && appState.tokenBalance >= 1) {
-                              const res = await fetch('/api/tokens/deduct', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ email: appState.userEmail, reason: 'retry', decade: era }),
-                              });
-                              if (!res.ok) return;
-                              onTokenSpent?.();
-                            }
+                            const res = await fetch('/api/tokens/deduct', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ deviceId, reason: 'retry', decade: era }),
+                            });
+                            if (!res.ok) { onOutOfTokens?.(); return; }
+                            onTokenSpent?.();
                             onRetry(era);
                           }}
                           className="px-4 py-1.5 rounded-full border border-zinc-600 text-xs text-zinc-300 hover:border-[#719483] hover:text-[#719483] transition-colors"
                         >
-                          {appState.userEmail && appState.tokenBalance !== null && appState.tokenBalance >= 1
-                            ? 'Retry (1 token)'
-                            : 'Retry'}
+                          {appState.tokenBalance !== null && appState.tokenBalance >= 1 ? 'Retry (1 token)' : 'Retry'}
                         </button>
                       )}
                     </div>
                   ) : gen.url ? (
-                    <img
-                      src={gen.url}
-                      alt={`Couple in the ${era}`}
-                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                    />
+                    <>
+                      <img
+                        src={gen.url}
+                        alt={`Couple in the ${era}`}
+                        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                      />
+                      {/* Re-do toggle overlay */}
+                      <button
+                        onClick={() => toggleSelectEra(era)}
+                        title={isSelected ? 'Deselect' : 'Select to re-generate'}
+                        className={`absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center border transition-all duration-200 ${isSelected ? 'bg-[#719483] border-[#719483] text-white opacity-100' : 'bg-black/50 border-zinc-600 text-zinc-400 opacity-0 group-hover:opacity-100 hover:border-[#719483] hover:text-[#719483]'}`}
+                      >
+                        {isSelected ? (
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
+                        ) : (
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                        )}
+                      </button>
+                    </>
                   ) : (
                     <div className="absolute inset-0 bg-zinc-900" />
                   )}
